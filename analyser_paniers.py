@@ -1,62 +1,28 @@
-# analyser_paniers_pro.py
 # ==============================================================================
 # SCRIPT D'ANALYSE STATISTIQUE AVANCÉE
-#
-# Objectif :
-# 1. Charger et nettoyer les données (structure 1 panier/ligne).
-# 2. Calculer les statistiques descriptives et de "pruning".
-# 3. Analyser les distributions (temporelle, horaire, taille des paniers).
-# 4. Analyser les articles populaires (Top N et Word Cloud).
-# 5. Analyser les clients (Top 10).
 # ==============================================================================
 
+from wordcloud import WordCloud
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import sys
-import ast  # Pour convertir en toute sécurité le string "['item1', ...]" en liste
+import sys, ast
 
-# --- Dépendances optionnelles ---
-try:
-    from wordcloud import WordCloud
-    HAS_WORDCLOUD = True
-except ImportError:
-    HAS_WORDCLOUD = False
-    print("AVERTISSEMENT: 'wordcloud' non installé. Le nuage de mots sera désactivé.")
-    print("Pour l'installer : pip install wordcloud")
-
-try:
-    from tqdm import tqdm
-    # Appliquer tqdm à toutes les opérations 'apply' de pandas
-    tqdm.pandas(desc="Progression")
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-    print("AVERTISSEMENT: 'tqdm' non installé. Pas de barre de progression.")
-    print("Pour l'installer : pip install tqdm")
-
-# --- 0. Configuration ---
+# Configuration
 FILEPATH = "dataset_baskets_dated.csv"
-sns.set(style="whitegrid", palette="muted") # Style global
-plt.rcParams['figure.figsize'] = (14, 7) # Taille des graphiques
+sns.set_theme(style="whitegrid", palette="muted")
+plt.rcParams['figure.figsize'] = (14, 7) # Taille graphiques
 
-def load_and_clean_data(filepath: str) -> pd.DataFrame | None:
+def load_and_clean_data(filepath: str):
     """
-    Charge, nettoie et formate les données du CSV (structure 1 panier/ligne).
+    Charge, nettoie et formate les données du CSV
     """
-    print(f"\n--- 1. Chargement et Nettoyage de {filepath} ---")
+    print(f"\n--- 1. Chargement et nettoyage de {filepath} ---")
     
-    try:
-        df = pd.read_csv(filepath)
-        print(f"Succès : Fichier chargé. {df.shape[0]} lignes initiales.")
-    except FileNotFoundError:
-        print(f"ERREUR : Fichier non trouvé à : {filepath}", file=sys.stderr)
-        return None
+    df = pd.read_csv(filepath)
+    print(f"Fichier chargé : {df.shape[0]} lignes")
     
-    required_cols = ['basket_id', 'date_trans', 'customer_id', 'products']
-    if not all(col in df.columns for col in required_cols):
-        print(f"ERREUR: Colonnes requises manquantes. {required_cols} sont attendues.", file=sys.stderr)
-        return None
+    # required_cols = ['basket_id', 'date_trans', 'customer_id', 'products']
 
     df.dropna(subset=['customer_id'], inplace=True)
     df['customer_id'] = df['customer_id'].astype(int)
@@ -67,25 +33,20 @@ def load_and_clean_data(filepath: str) -> pd.DataFrame | None:
     except Exception:
         df['date'] = pd.NaT 
 
-    # --- Conversion de la colonne 'products' (string-list vers VRAIE liste) ---
-    print("Conversion de la colonne 'products' (string -> list)...")
+    # Conversion de la colonne 'products' liste
+    print("Conversion de 'products' (string -> list)...")
     
     def safe_literal_eval(item_str):
         try:
-            evaluated = ast.literal_eval(str(item_str))
-            return evaluated if isinstance(evaluated, list) else []
-        except (ValueError, SyntaxError, TypeError):
+            return ast.literal_eval(str(item_str))
+        except:
             return []
 
-    # Utilise 'progress_apply' si tqdm est dispo, sinon 'apply'
-    if HAS_TQDM:
-        df['products_list'] = df['products'].progress_apply(safe_literal_eval)
-    else:
-        df['products_list'] = df['products'].apply(safe_literal_eval)
 
+    df['products_list'] = df['products'].apply(safe_literal_eval)
     df['basket_size'] = df['products_list'].str.len()
-    
-    # Supprimer les paniers vides (ceux qui étaient [nan] ou mal formés)
+
+    # supprimer les paniers vides ([nan] ou mal formés)
     initial_rows = df.shape[0]
     df = df[df['basket_size'] > 0]
     print(f"{initial_rows - df.shape[0]} paniers vides ou invalides supprimés.")
@@ -96,16 +57,16 @@ def load_and_clean_data(filepath: str) -> pd.DataFrame | None:
 
 def get_all_items_series(df: pd.DataFrame) -> pd.Series:
     """
-    "Explose" le dataframe pour obtenir une Series de tous les articles vendus.
+    Explose le dataframe pour obtenir une Series de tous les articles vendus
     """
-    print("Préparation de la liste de tous les articles (explosion)...")
+    print("Préparation de la liste de tous les articles...")
     all_items_series = df.explode('products_list')['products_list']
     
-    # Nettoyage des articles (ex: 'POSTAGE' ou 'nan' en string)
-    articles_a_exclure = ['POSTAGE', 'nan', ''] 
-    all_items_series = all_items_series[
-        ~all_items_series.astype(str).str.contains('|'.join(articles_a_exclure), case=False, na=True)
-    ]
+    # Nettoyage : supprimer valeurs vides et articles exclus
+    all_items_series = all_items_series.dropna()
+    all_items_series = all_items_series[all_items_series.astype(str).str.strip() != '']
+    articles_a_exclure = ['POSTAGE']
+    all_items_series = all_items_series[~all_items_series.isin(articles_a_exclure)]
     return all_items_series
 
 def print_global_stats(df: pd.DataFrame, all_items_series: pd.Series):
@@ -119,13 +80,12 @@ def print_global_stats(df: pd.DataFrame, all_items_series: pd.Series):
     item_counts = all_items_series.value_counts()
     
     print(f"Paniers (transactions) uniques : {nb_paniers:,}")
-    print(f"Clients uniques       : {nb_clients:,}")
+    print(f"Clients uniques : {nb_clients:,}")
     print(f"Articles uniques (filtrés) : {len(item_counts):,}")
     print(f"Articles vendus (total) : {len(all_items_series):,}")
     
     print("\n--- 💡 SIMULATION DE PRUNING (ÉLAGAGE) ---")
-    print("Info: Cette table vous aide à choisir le 'min_support' pour Apriori.")
-    
+
     pruning_stats = []
     for support_pct in [5, 2, 1, 0.5, 0.2, 0.1]:
         min_support = support_pct / 100.0
@@ -152,9 +112,9 @@ def analyze_distributions(df: pd.DataFrame):
     3. Paniers par heure
     4. Taille des paniers (Histogramme)
     """
-    print("--- 3. Analyse des Distributions (Génération des graphiques) ---")
+    print("--- 3. Analyse des Distributions ---")
     
-    # --- 3a. Paniers par Mois ---
+    # --- Paniers par Mois ---
     paniers_mensuels = df.set_index('date').resample('M')['basket_id'].count()
     plt.figure(figsize=(14, 7))
     ax1 = paniers_mensuels.plot(kind='line', marker='o', color='royalblue')
@@ -164,7 +124,7 @@ def analyze_distributions(df: pd.DataFrame):
     plt.tight_layout()
     plt.show()
 
-    # --- 3b & 3c. Jour de la Semaine et Heure ---
+    # --- Jour de la Semaine et Heure ---
     df['weekday'] = df['date'].dt.day_name()
     df['hour'] = df['date'].dt.hour
     
@@ -186,11 +146,11 @@ def analyze_distributions(df: pd.DataFrame):
     plt.tight_layout()
     plt.show()
 
-    # --- 3d. Taille des Paniers ---
+    # --- Taille des Paniers ---
     plt.figure(figsize=(14, 7))
     # Limiter l'axe des X pour une meilleure lisibilité (ex: 99e percentile)
     max_size = int(df['basket_size'].quantile(0.99))
-    
+
     ax4 = sns.histplot(data=df, x='basket_size', bins=range(1, max_size + 2), kde=False, color='green')
     ax4.set_title(f'Distribution de la Taille des Paniers (jusqu\'à {max_size} articles)', fontsize=16)
     ax4.set_xlabel('Nombre d\'articles dans le panier')
@@ -210,7 +170,7 @@ def analyze_distributions(df: pd.DataFrame):
 
 def analyze_popular_items(all_items_series: pd.Series):
     """
-    Affiche le Top 20 et génère un Word Cloud (si possible).
+    Affiche le Top 20 et génère un Word Cloud
     """
     print("--- 4. Analyse des Articles Populaires ---")
     
@@ -219,22 +179,21 @@ def analyze_popular_items(all_items_series: pd.Series):
     print("\n--- TOP 20 ARTICLES (FILTRÉS) ---")
     print(item_counts.head(20).to_string())
     
-    if HAS_WORDCLOUD:
-        print("\nGénération du nuage de mots (Word Cloud)...")
-        # Transformer les comptes en dictionnaire pour le word cloud
-        wordcloud_data = item_counts.head(100).to_dict()
-        
-        wc = WordCloud(width=1000, 
-                       height=500, 
-                       background_color='white', 
-                       colormap='viridis').generate_from_frequencies(wordcloud_data)
-        
-        plt.figure(figsize=(15, 8))
-        plt.imshow(wc, interpolation='bilinear')
-        plt.axis('off')
-        plt.title('Top 100 des Articles les Plus Fréquents', fontsize=16)
-        plt.show()
+    print("\nGénération du nuage de mots (Word Cloud)...")
+    # Transformer les comptes en dictionnaire pour le word cloud
+    wordcloud_data = item_counts.head(100).to_dict()
     
+    wc = WordCloud(width=1000, 
+                    height=500, 
+                    background_color='white', 
+                    colormap='viridis').generate_from_frequencies(wordcloud_data)
+    
+    plt.figure(figsize=(15, 8))
+    plt.imshow(wc, interpolation='bilinear')
+    plt.axis('off')
+    plt.title('Top 100 des Articles les Plus Fréquents', fontsize=16)
+    plt.show()
+
     print("-" * 50)
 
 def analyze_customer_activity(df: pd.DataFrame, all_items_series: pd.Series):
@@ -268,26 +227,24 @@ def analyze_customer_activity(df: pd.DataFrame, all_items_series: pd.Series):
 
 if __name__ == "__main__":
     
-    # Étape 1: Chargement et Nettoyage
     df_clean = load_and_clean_data(FILEPATH)
-    
     if df_clean is not None:
-        # Pré-calculer la liste de tous les articles (utilisée par 3 fonctions)
+        # calculer la liste de tous les articles
         all_items_series = get_all_items_series(df_clean)
         
-        # Étape 2: Statistiques Globales & Pruning
+        # Statistiques Globales & Pruning
         print_global_stats(df_clean, all_items_series)
         
-        # Étape 3: Distributions (Temps, Jour, Heure, Taille)
+        # Distributions (Temps, Jour, Heure, Taille)
         analyze_distributions(df_clean)
         
-        # Étape 4: Articles Populaires & Word Cloud
+        # Articles Populaires & Word Cloud
         analyze_popular_items(all_items_series)
-        
-        # Étape 5: Activité Client
+
+        # Activité Client
         analyze_customer_activity(df_clean, all_items_series)
         
-        print("\n✅ Analyse terminée.")
-        print("Tous les graphiques se sont affichés dans des fenêtres séparées.")
+        print("\nAnalyse terminée.")
+        print("Tous les graphiques se sont affichés dans des fenêtres séparées")
     else:
-        print("❌ Échec de l'analyse : impossible de charger ou de nettoyer les données.", file=sys.stderr)
+        print("Échec de l'analyse : impossible de charger ou de nettoyer les données", file=sys.stderr)
