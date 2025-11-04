@@ -2,8 +2,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sys, ast, os
-from mlxtend.preprocessing import TransactionEncoder  # NOUVEAU
-from mlxtend.frequent_patterns import apriori, association_rules  # NOUVEAU
+from mlxtend.preprocessing import TransactionEncoder
+from mlxtend.frequent_patterns import apriori, association_rules
 
 FILEPATH = 'dataset_baskets_dated.csv'
 OUTPUT_DIR = 'graphiques'
@@ -60,10 +60,9 @@ def load_and_clean_data(filepath: str):
     print('-' * 50)
     return df
 
-# filtrage sémantique
 def filter_and_get_all_items(df: pd.DataFrame):
     """Filtre les produits des listes et retourne la Series de tous les articles valides"""
-    print("Filtrage sémantique...")
+    print("Filtrage sémantique déb")
     
     all_items_series_full = df.explode('products_list')['products_list'].dropna()
     all_items_series_full = all_items_series_full[all_items_series_full.astype(str).str.strip() != '']
@@ -95,7 +94,7 @@ def filter_and_get_all_items(df: pd.DataFrame):
 
     # filtrer paniers vides
     initial_rows = df.shape[0]
-    df = df[df['basket_size_filtered'] > 0].copy() # éviter SettingWithCopyWarning
+    df = df[df['basket_size_filtered'] > 0].copy()
     print(f"{initial_rows - df.shape[0]} paniers sont devenus vides après filtrage 'junk' et ont été supprimés.")
     print(f"Il y a {df.shape[0]} paniers valides restants pour l'analyse.")
     print('-' * 50)
@@ -104,18 +103,18 @@ def filter_and_get_all_items(df: pd.DataFrame):
 
 def print_global_stats(df: pd.DataFrame, all_items_series: pd.Series):
     """Affiche les statistiques descriptives (basées sur les données filtrées)."""
-    print('Statistiques Descriptives (après nettoyage complet)')
-    # utilise les données filtrées
+    print('statistiques descriptives')
+ 
     nb_paniers = df['basket_id'].nunique()
     nb_clients = df['customer_id'].nunique()
     item_counts = all_items_series.value_counts()
 
-    print(f"Paniers uniques (nets) : {nb_paniers:,}")
-    print(f"Clients uniques (nets) : {nb_clients:,}")
-    print(f"Articles uniques (nets) : {len(item_counts):,}")
-    print(f"Articles vendus (nets) : {len(all_items_series):,}")
+    print(f"Paniers uniques : {nb_paniers:,}")
+    print(f"Clients uniques : {nb_clients:,}")
+    print(f"Articles uniques : {len(item_counts):,}")
+    print(f"Articles vendus : {len(all_items_series):,}")
 
-    print('\nSIMULATION DE PRUNING (sur paniers nets)')
+    print('\nSimulation de pruning')
     pruning_stats = []
     for support_pct in [5, 2, 1, .5, .2, .1]:
         min_support = support_pct / 100
@@ -132,135 +131,125 @@ def print_global_stats(df: pd.DataFrame, all_items_series: pd.Series):
 
 def analyze_distributions(df: pd.DataFrame):
     """Crée 4 graphiques"""
-    print('Analyse des Distributions')
+    print('Analyse des distributions')
     
     # Paniers par mois
     paniers_mensuels = df.set_index('date').resample('ME')['basket_id'].count()
     plt.figure(figsize=(14, 7))
     ax1 = paniers_mensuels.plot(kind='line', marker='o', color='royalblue')
-    ax1.set_title('Distribution des Paniers par Mois', fontsize=16)
+    ax1.set_title('Distribution des paniers par mois', fontsize=16)
     ax1.set_xlabel('Mois')
-    ax1.set_ylabel('Nombre de Paniers')
+    ax1.set_ylabel('Nombre de paniers')
     plt.tight_layout()
     filepath_mois = os.path.join(OUTPUT_DIR, '1_paniers_par_mois.png')
     plt.savefig(filepath_mois, dpi=150, bbox_inches='tight')
-    print(f"✓ Graphique sauvegardé : {filepath_mois}")
     plt.close()
 
-    # Jour et Heure
+    # jour et heure
     df['weekday'] = df['date'].dt.day_name()
     df['hour'] = df['date'].dt.hour
     weekdays_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     fig, (ax2, ax3) = plt.subplots(2, 1, figsize=(14, 12))
     sns.countplot(data=df, x='weekday', hue='weekday', ax=ax2, order=weekdays_order, palette='Blues_d', legend=False)
-    ax2.set_title('Paniers par Jour de la Semaine', fontsize=16)
+    ax2.set_title('Paniers par jour de la semaine', fontsize=16)
     sns.countplot(data=df, x='hour', hue='hour', ax=ax3, palette='Oranges_d', legend=False)
-    ax3.set_title('Paniers par Heure de la Journée', fontsize=16)
+    ax3.set_title('Paniers par heure de la journée', fontsize=16)
     plt.tight_layout()
     filepath_jour_heure = os.path.join(OUTPUT_DIR, '2_paniers_par_jour_et_heure.png')
     plt.savefig(filepath_jour_heure, dpi=150, bbox_inches='tight')
-    print(f"✓ Graphique sauvegardé : {filepath_jour_heure}")
     plt.close()
 
     # Taille des paniers
     plt.figure(figsize=(14, 7))
     max_size = int(df['basket_size_filtered'].quantile(.99))
     ax4 = sns.histplot(data=df, x='basket_size_filtered', bins=range(1, max_size + 2), kde=False, color='green')
-    ax4.set_title(f"Distribution de la Taille des Paniers (filtrés, jusqu'à {max_size} articles)", fontsize=16)
-    ax4.set_xlabel("Nombre d'articles dans le panier (net)")
-    ax4.set_ylabel('Nombre de Paniers')
+    ax4.set_title(f"Distribution de la taille des paniers (filtrés, jusqu'à {max_size} articles)", fontsize=16)
+    ax4.set_xlabel("Nombre d'articles dans le panier")
+    ax4.set_ylabel('Nombre de paniers')
     ax4.set_yscale('log')
     mean_size = df['basket_size_filtered'].mean()
     median_size = df['basket_size_filtered'].median()
-    print(f"Stats - Taille des paniers (nets): Moyenne={mean_size:.2f}, Médiane={median_size:.0f}")
+    print(f"Stats - taille des paniers: moyenne={mean_size:.2f}, médiane={median_size:.0f}")
     plt.tight_layout()
     filepath_taille = os.path.join(OUTPUT_DIR, '3_taille_des_paniers_filtres.png')
     plt.savefig(filepath_taille, dpi=150, bbox_inches='tight')
-    print(f"✓ Graphique sauvegardé : {filepath_taille}")
     plt.close()
-    print('Tous les graphiques de distribution ont été générés et sauvegardés')
     print('-' * 50)
 
 def analyze_popular_items(all_items_series: pd.Series):
     """Affiche top 20 + graphique à barres"""
-    print("Analyse des Articles Populaires (après nettoyage complet)")
     item_counts = all_items_series.value_counts()
     
-    print("\nTOP 20 DES ARTICLES LES PLUS VENDUS (nets) :")
+    print("\nTop 20 des articles les plus vendus :")
     print(item_counts.head(20).to_string())
     print('-' * 50)
 
     plt.figure(figsize=(14, 10))
     top_20_items = item_counts.head(20)
     ax = sns.barplot(x=top_20_items.values, y=top_20_items.index, palette='viridis', orient='h')
-    ax.set_title('Top 20 des Articles les Plus Populaires (nets)', fontsize=16)
-    ax.set_xlabel('Nombre de Ventes')
+    ax.set_title('Top 20 des articles les plus populaires', fontsize=16)
+    ax.set_xlabel('Nombre de ventes')
     ax.set_ylabel('Article')
     
     plt.tight_layout()
     filepath_top_items = os.path.join(OUTPUT_DIR, '4_top_20_articles.png')
     plt.savefig(filepath_top_items, dpi=150, bbox_inches='tight')
-    print(f"✓ Graphique sauvegardé : {filepath_top_items}")
     plt.close()
     print('-' * 50)
 
 def analyze_customer_activity(df: pd.DataFrame, all_items_series: pd.Series):
     """Affiche le Top 10 des clients"""
-    print("Analyse de l'Activité Client")
+    print("Analyse de l'activité client")
     top_clients_baskets = df['customer_id'].value_counts().head(10).reset_index()
-    top_clients_baskets.columns = ['ID Client (Paniers)', 'Nb de Paniers (nets)']
+    top_clients_baskets.columns = ['ID Client (Paniers)', 'Nb de Paniers']
 
     df_exploded = df.explode('products_list_filtered')
     top_clients_items = df_exploded['customer_id'].value_counts().head(10).reset_index()
-    top_clients_items.columns = ['ID Client (Articles)', "Nb d'Articles (nets)"]
+    top_clients_items.columns = ['ID Client (Articles)', "Nb d'Articles"]
 
     top_clients_df = pd.concat([top_clients_baskets, top_clients_items], axis=1)
-    print("\nTOP 10 CLIENTS (par Nb de Paniers vs Nb d'Articles) ")
+    print("\nTop 10 clients (par Nb de Paniers vs Nb d'Articles) ")
     print(top_clients_df.to_string(index=False))
     print('-' * 50)
 
 def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_confidence=0.7):
     """exécute Apriori + règles d'association"""
-    print("analyse des règles d'association (Apriori)")
 
-    # utilise products_list_filtered
     transactions_list = df['products_list_filtered'].tolist()
     print(f"{len(transactions_list)} paniers valides pour l'analyse Apriori.")
 
-    # 2. Encoder les transactions
-    print("Encodage des transactions (one-hot)...")
+    # encoder transactions
     te = TransactionEncoder()
     te_ary = te.fit(transactions_list).transform(transactions_list)
     df_encoded = pd.DataFrame(te_ary, columns=te.columns_)
 
-    # 3. Appliquer Apriori (Itemsets fréquents)
-    print(f"Recherche des itemsets fréquents (Support >= {min_support}, Max_K = {max_k})...")
+    # appliquer Apriori
+    print(f"Recherche des itemsets fréquents avec support >= {min_support}, Max_K = {max_k})...")
     frequent_itemsets = apriori(df_encoded, min_support=min_support, use_colnames=True, max_len=max_k)
     
     if frequent_itemsets.empty:
-        print(f"AUCUN ITEMSET FRÉQUENT TROUVÉ avec un support >= {min_support}. Essayez un support plus bas.")
+        print(f"Aucun itemset trouvé avec un support >= {min_support}. Essayez un support plus bas.")
         print('-' * 50)
         return
 
     # triez les 20 meilleurs itemsets
     frequent_itemsets_sorted = frequent_itemsets.sort_values(by='support', ascending=False)
-    print("\nTOP 20 DES ITEMSETS FRÉQUENTS :")
+    print("\nTop 20 des itemsets fréquents :")
     print(frequent_itemsets_sorted.head(20).to_string(index=False))
     print('-' * 50)
 
-    # générer les règles d'association
-    print(f"Génération des règles d'association (Confiance >= {min_confidence})...")
+    print(f"Création des règles d'association avec confiance >= {min_confidence})...")
     rules = association_rules(frequent_itemsets, metric='confidence', min_threshold=min_confidence)
-    
+
     if rules.empty:
-        print(f"AUCUNE RÈGLE D'ASSOCIATION TROUVÉE avec une confiance >= {min_confidence}.")
+        print(f"aucune règle trouvée avec une confiance >= {min_confidence}.")
         print('-' * 50)
         return
 
     # trier par lift
     rules_sorted = rules.sort_values(by='lift', ascending=False)
     
-    print("\nTOP RÈGLES D'ASSOCIATION (Triées par Lift) :")
+    print("\nTop règles d'association (par lift) :")
 
     cols_to_show = ['antecedents', 'consequents', 'support', 'confidence', 'lift']
     print(rules_sorted[cols_to_show].head(20).to_string(index=False))
