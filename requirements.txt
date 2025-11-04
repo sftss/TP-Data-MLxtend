@@ -3,4 +3,4 @@ matplotlib.pyplot
 seaborn
 sys
 ast
-wordcloud
+mlxtend
