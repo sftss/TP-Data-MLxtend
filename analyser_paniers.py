@@ -1,9 +1,7 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import sys, ast, os
+import pandas as pd, matplotlib.pyplot as plt, seaborn as sns, sys, ast, os
 from mlxtend.preprocessing import TransactionEncoder
 from mlxtend.frequent_patterns import apriori, association_rules
+from datetime import timedelta
 
 FILEPATH = 'dataset_baskets_dated.csv'
 OUTPUT_DIR = 'graphiques'
@@ -12,7 +10,7 @@ sns.set_theme(style='whitegrid', palette='muted')
 plt.rcParams['figure.figsize'] = (14, 7)
 
 def clean_item_name(item_name):
-    """Nettoie un nom d'article"""
+    """Nettoie les articles"""
     if not isinstance(item_name, str):
         return None
     name = item_name.lower()
@@ -32,9 +30,11 @@ def load_and_clean_data(filepath: str):
 
     # nettoyage dates
     try:
-        df['date'] = pd.to_datetime(df['date_trans'])
-        print('Conversion date_trans timestamp en datetime')
-    except Exception:
+        # ns pour les timestamps
+        df['date'] = pd.to_datetime(df['date_trans'], unit='ns')
+        print('Conversion date_trans timestamp en datetime (unit=ns)')
+    except Exception as e:
+        print(f"Erreur conversion date: {e}")
         df['date'] = pd.NaT
 
     # conversion de products en liste avec nettoyage
@@ -61,7 +61,7 @@ def load_and_clean_data(filepath: str):
     return df
 
 def filter_and_get_all_items(df: pd.DataFrame):
-    """Filtre les produits des listes et retourne la Series de tous les articles valides"""
+    """Filtre les produits des listes et retourne la Series de tous les articles"""
     print("Filtrage sémantique déb")
     
     all_items_series_full = df.explode('products_list')['products_list'].dropna()
@@ -102,9 +102,9 @@ def filter_and_get_all_items(df: pd.DataFrame):
     return df, all_items_series_valid
 
 def print_global_stats(df: pd.DataFrame, all_items_series: pd.Series):
-    """Affiche les statistiques descriptives (basées sur les données filtrées)."""
+    """Affiche les statistiques sur les données filtrées"""
     print('statistiques descriptives')
- 
+
     nb_paniers = df['basket_id'].nunique()
     nb_clients = df['customer_id'].nunique()
     item_counts = all_items_series.value_counts()
@@ -114,7 +114,7 @@ def print_global_stats(df: pd.DataFrame, all_items_series: pd.Series):
     print(f"Articles uniques : {len(item_counts):,}")
     print(f"Articles vendus : {len(all_items_series):,}")
 
-    print('\nSimulation de pruning')
+    print('\nPruning')
     pruning_stats = []
     for support_pct in [5, 2, 1, .5, .2, .1]:
         min_support = support_pct / 100
@@ -133,7 +133,7 @@ def analyze_distributions(df: pd.DataFrame):
     """Crée 4 graphiques"""
     print('Analyse des distributions')
     
-    # Paniers par mois
+    # paniers par mois
     paniers_mensuels = df.set_index('date').resample('ME')['basket_id'].count()
     plt.figure(figsize=(14, 7))
     ax1 = paniers_mensuels.plot(kind='line', marker='o', color='royalblue')
@@ -159,7 +159,7 @@ def analyze_distributions(df: pd.DataFrame):
     plt.savefig(filepath_jour_heure, dpi=150, bbox_inches='tight')
     plt.close()
 
-    # Taille des paniers
+    # taille des paniers
     plt.figure(figsize=(14, 7))
     max_size = int(df['basket_size_filtered'].quantile(.99))
     ax4 = sns.histplot(data=df, x='basket_size_filtered', bins=range(1, max_size + 2), kde=False, color='green')
@@ -213,15 +213,21 @@ def analyze_customer_activity(df: pd.DataFrame, all_items_series: pd.Series):
     print('-' * 50)
 
 def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_confidence=0.7):
-    """exécute Apriori + règles d'association"""
+    """Apriori + règles d'association"""
 
     transactions_list = df['products_list_filtered'].tolist()
     print(f"{len(transactions_list)} paniers valides pour l'analyse Apriori.")
 
-    # encoder transactions
+    # encoder transactions en matrice SPARSE
     te = TransactionEncoder()
-    te_ary = te.fit(transactions_list).transform(transactions_list)
-    df_encoded = pd.DataFrame(te_ary, columns=te.columns_)
+    try:
+        # matrice sparse
+        te_ary = te.fit(transactions_list).transform(transactions_list, sparse=True)
+        df_encoded = pd.DataFrame.sparse.from_spmatrix(te_ary, columns=te.columns_)
+    except TypeError:
+        # fallback (pb de version)
+        te_ary = te.fit(transactions_list).transform(transactions_list)
+        df_encoded = pd.DataFrame(te_ary, columns=te.columns_)
 
     # appliquer Apriori
     print(f"Recherche des itemsets fréquents avec support >= {min_support}, Max_K = {max_k})...")
@@ -248,8 +254,8 @@ def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_c
 
     # trier par lift
     rules_sorted = rules.sort_values(by='lift', ascending=False)
-    
-    print("\nTop règles d'association (par lift) :")
+
+    print("\nTop règles d'association par lift :")
 
     cols_to_show = ['antecedents', 'consequents', 'support', 'confidence', 'lift']
     print(rules_sorted[cols_to_show].head(20).to_string(index=False))
@@ -258,23 +264,33 @@ def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_c
 
 if __name__ == "__main__":
     df_clean = load_and_clean_data(FILEPATH)
-    
+
     if df_clean is not None:
         df_filtered, all_items_valid = filter_and_get_all_items(df_clean)
-        
+
+        # tt les données (pour les graphiques et stats)
         print_global_stats(df_filtered, all_items_valid)
         analyze_distributions(df_filtered) 
         analyze_popular_items(all_items_valid)
         analyze_customer_activity(df_filtered, all_items_valid)        
 
-        # support 2%, k=5, confiance 70%
-        analyze_association_rules(
-            df_filtered, 
-            min_support=0.02, 
-            max_k=5, 
-            min_confidence=0.7
-        )
-        
+        # "Dernière Heure" JUSTE pour les règles d'association
+        print("\nFiltrage pour règles d'association")
+        if not df_filtered.empty:
+            max_date = df_filtered['date'].max()
+            one_hour_ago = max_date - timedelta(hours=1)
+            print(f"Période analysée : {one_hour_ago} à {max_date}")
+
+            df_last_hour = df_filtered[df_filtered['date'] >= one_hour_ago].copy()
+            print(f"{df_last_hour.shape[0]} paniers conservés pour l'analyse MLxtend.")
+
+            # support 2%, k=3 (taille max), confiance 80%
+            analyze_association_rules(
+                df_last_hour, 
+                min_support=0.02, 
+                max_k=3, 
+                min_confidence=0.8
+            )
         print('\nFIN')
     else:
         print('impossible de charger ou de nettoyer les données', file=sys.stderr)
