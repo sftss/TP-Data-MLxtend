@@ -1,4 +1,5 @@
 import pandas as pd, matplotlib.pyplot as plt, seaborn as sns, sys, ast, os
+import networkx as nx # AJOUT : Nécessaire pour la génération LaTeX de ton exemple
 from mlxtend.preprocessing import TransactionEncoder
 from mlxtend.frequent_patterns import apriori, association_rules
 from datetime import timedelta
@@ -23,11 +24,11 @@ def clean_item_name(item_name):
 def load_and_clean_data(filepath: str):
     """Charge, nettoie et formate les données"""
     print(f"\nChargement et nettoyage de {filepath}")
-    # Petit check de sécurité si le fichier n'est pas là
+    # Sécurité si fichier absent
     if not os.path.exists(filepath):
         print(f"ERREUR: Fichier {filepath} introuvable.")
         return None
-
+        
     df = pd.read_csv(filepath)
     print(f"{df.shape[0]} lignes chargées")
     
@@ -174,58 +175,119 @@ def analyze_popular_items(all_items_series: pd.Series):
     plt.close()
     print("-" * 50)
 
-### --- FONCTION POUR GENERER LE CODE LATEX  --- ###
-def generate_latex_tikz(rules_df):
-    """Génère le code LaTeX pour visualiser les 3 meilleures règles"""
-    print("\n" + "="*50)
-    print("CODE LATEX (A copier-coller dans Overleaf)")
-    print("="*50)
+# ============================================================
+# AJOUT : Fonction de génération LaTeX (Issue de ton exemple)
+# ============================================================
+def generate_latex_for_rules(rules_df: pd.DataFrame):
+    """
+    Génère un code LaTeX/TikZ complet pour visualiser les 3 meilleures règles.
+    Utilise NetworkX pour placer les items autour de chaque règle.
+    """
+    TOP_K_VISUALIZE = 3
+    print(f"\n[TikZ] Génération du code LaTeX pour les {TOP_K_VISUALIZE} meilleures règles...")
     
-    # On prend les 3 meilleures règles selon le Lift
-    top_3 = rules_df.head(3).copy()
-    
-    # Début du document LaTeX
-    latex_code = r"""
-\documentclass{article}
-\usepackage{tikz}
-\usetikzlibrary{shapes, arrows.meta, positioning}
-\begin{document}
-\begin{figure}[h]
-\centering
-\begin{tikzpicture}[
-    node distance=2cm and 3cm,
-    item/.style={rectangle, draw=blue!60, fill=blue!5, very thick, minimum size=7mm},
-    rule/.style={circle, draw=red!60, fill=red!5, very thick, minimum size=7mm},
-    arrow/.style={->, -{Latex[width=3mm]}, thick}
-]
-"""
-    y_pos = 0
-    for idx, row in top_3.iterrows():
-        ant = "\\newline ".join(list(row['antecedents']))
-        cons = "\\newline ".join(list(row['consequents']))
-        lift = row['lift']
-        conf = row['confidence']
-        
-        # Création des noeuds
-        block = f"""
-    % Regle {idx+1}
-    \\node[item, align=center] (ant{idx}) at (0, {y_pos}) {{{ant}}};
-    \\node[rule] (r{idx}) [right=of ant{idx}] {{R{idx+1}}};
-    \\node[item, align=center] (cons{idx}) [right=of r{idx}] {{{cons}}};
-    \\draw[arrow] (ant{idx}) -- (r{idx});
-    \\draw[arrow] (r{idx}) -- node[above, font=\\small] {{Lift: {lift:.2f}}} node[below, font=\\small] {{Conf: {conf:.0%}}} (cons{idx});
-"""
-        latex_code += block
-        y_pos -= 3.5 
+    latex = [
+        r"\documentclass[tikz,border=2pt,png]{standalone}",
+        r"\usepackage[utf8]{inputenc}",
+        r"\usepackage[T1]{fontenc}",
+        r"\usepackage{lmodern}",
+        r"\usetikzlibrary{arrows.meta, positioning, calc}",
+        "",
+        r"% --- Début du document ---",
+        r"\begin{document}",
+        r"\begin{tikzpicture}[",
+        r"  % Style des noeuds 'Item' (Produit)",
+        r"  item/.style={",
+        r"    circle, fill=green!40, draw=green!80!black, thick,",
+        r"    minimum size=1.5cm, align=center, font=\sffamily\scriptsize",
+        r"  },",
+        r"  % Style des noeuds 'Rule' (Règle)",
+        r"  rule/.style={",
+        r"    circle, fill=red!40, draw=red!80!black, thick,",
+        r"    minimum size=0.8cm, align=center, font=\sffamily\bfseries\small",
+        r"  },",
+        r"  % Style des flèches",
+        r"  every edge/.style={draw, -{Stealth[length=3mm, width=2mm]}}",
+        r"]",
+        ""
+    ]
 
-    latex_code += r"""
-\end{tikzpicture}
-\caption{Visualisation des 3 meilleures règles d'association}
-\end{figure}
-\end{document}
-"""
-    print(latex_code)
-    print("="*50 + "\n")
+    # Centres verticalement espacés pour bien séparer les règles
+    rule_centers = [(0, 15), (0, 0), (0, -15)]
+    radius = 6 
+    node_id_counter = 1
+    
+    # Sélection des 3 premières règles
+    top_rules = rules_df.head(TOP_K_VISUALIZE)
+
+    if top_rules.empty:
+        print("[TikZ] Aucune règle à visualiser.")
+        return
+
+    for i, (idx, row) in enumerate(top_rules.iterrows()):
+        if i >= 3: break
+        
+        rule_name = f"R{i+1}"
+        rule_id = f"r{i+1}"
+        center_x, center_y = rule_centers[i]
+        
+        latex.append(f"% --- Règle {i+1} (Lift: {row['lift']:.2f}) ---")
+        latex.append(
+            f"\\node[rule] ({rule_id}) at ({center_x:.2f}, {center_y:.2f}) {{{rule_name}}};"
+        )
+        
+        antecedents = list(row['antecedents'])
+        consequents = list(row['consequents'])
+        items = antecedents + consequents
+        
+        if not items:
+            continue
+
+        # Utilisation de NetworkX pour placer les items en cercle
+        G_items = nx.Graph()
+        G_items.add_nodes_from(items)
+        # On centre le layout circulaire sur la position de la règle
+        pos_items = nx.circular_layout(G_items, scale=radius, center=(center_x, center_y))
+        
+        item_node_ids = {} 
+
+        for item in items:
+            item_tikz_id = f"n{node_id_counter}"
+            node_id_counter += 1
+            item_node_ids[item] = item_tikz_id
+            (x, y) = pos_items[item]
+            # Echappement des caractères pour LaTeX
+            label = str(item).replace("-", "-\\\\").replace("_", "\\_").replace(" ", "\\\\")
+            latex.append(
+                f"\\node[item] ({item_tikz_id}) at ({x:.2f}, {y:.2f}) {{{label}}};"
+            )
+
+        # Flèches antécédents -> Règle (Vertes)
+        for ant in antecedents:
+            ant_id = item_node_ids[ant]
+            latex.append(
+                f"\\draw[green!60!black, thick, ->] ({ant_id}) -- ({rule_id});"
+            )
+
+        # Flèches Règle -> Conséquents (Rouges)
+        for cons in consequents:
+            cons_id = item_node_ids[cons]
+            lift_label = f"{row['lift']:.2f}"
+            latex.append(
+                f"\\draw[red!80!black, thick, ->] ({rule_id}) -- "
+                f"node[pos=0.6, above, sloped, font=\\tiny, fill=white, inner sep=1pt] {{{lift_label}}} "
+                f"({cons_id});"
+            )
+        latex.append("") 
+
+    latex.append(r"\end{tikzpicture}")
+    latex.append(r"\end{document}")
+    
+    print("\n" + "="*80)
+    print("CODE LATEX (TIKZ) A COPIER DANS OVERLEAF :")
+    print("="*80)
+    print("\n".join(latex))
+    print("="*80 + "\n")
 
 
 def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_confidence=0.7):
@@ -269,9 +331,9 @@ def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_c
     # graphique des règles d'association
     top_rules = rules_sorted.head(15).copy()
     if not top_rules.empty:
-        
+        # formattage CORRIGÉ (guillemets simples à l'intérieur)
         top_rules["rule"] = top_rules.apply(
-            lambda row: f"{', '.join(row['antecedents'])} → {', '.join(row['consequents'])}", 
+            lambda row: f"{', '.join(row['antecedents'])} → {', '.join(row['consequents'])}",
             axis=1
         )
         
@@ -285,8 +347,8 @@ def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_c
         filepath_rules = os.path.join(OUTPUT_DIR, "5_regles_association.png")
         plt.savefig(filepath_rules, dpi=150, bbox_inches="tight")
         plt.close()
-        
-    ### --- On retourne les règles pour pouvoir générer le LaTeX ensuite --- ###
+    
+    # IMPORTANT : Retourne le dataframe pour l'utiliser ensuite
     return rules_sorted
 
 if __name__ == "__main__":
@@ -295,7 +357,7 @@ if __name__ == "__main__":
         df_filtered, all_items_valid = filter_and_get_all_items(df_clean)
 
         # tt les données pour les graphiques
-        analyze_distributions(df_filtered) 
+        analyze_distributions(df_filtered)
         analyze_popular_items(all_items_valid)
 
         # Filtrage pour les règles d'association
@@ -308,17 +370,17 @@ if __name__ == "__main__":
             df_periode = df_filtered[df_filtered["date"] >= periode_avant].copy()
             print(f"{df_periode.shape[0]} paniers pour MLxtend")
 
-            
+            # support 0.02, k=3, confiance 0.8 (CORRIGÉ)
             df_rules = analyze_association_rules(
                 df_periode,
-                min_support=0.02,   # 2% demandé
-                max_k=3,            # taille 3 max demandée
-                min_confidence=0.8  # 80% demandé
+                min_support=0.02,
+                max_k=3,
+                min_confidence=0.8
             )
             
-            ### --- APPEL DE LA FONCTION LATEX --- ###
+            # APPEL DU LATEX SI RÈGLES TROUVÉES
             if df_rules is not None and not df_rules.empty:
-                generate_latex_tikz(df_rules)
+                generate_latex_for_rules(df_rules)
 
         print("\nFIN")
     else:
