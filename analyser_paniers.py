@@ -23,6 +23,11 @@ def clean_item_name(item_name):
 def load_and_clean_data(filepath: str):
     """Charge, nettoie et formate les données"""
     print(f"\nChargement et nettoyage de {filepath}")
+    # Petit check de sécurité si le fichier n'est pas là
+    if not os.path.exists(filepath):
+        print(f"ERREUR: Fichier {filepath} introuvable.")
+        return None
+
     df = pd.read_csv(filepath)
     print(f"{df.shape[0]} lignes chargées")
     
@@ -169,6 +174,60 @@ def analyze_popular_items(all_items_series: pd.Series):
     plt.close()
     print("-" * 50)
 
+### --- FONCTION POUR GENERER LE CODE LATEX  --- ###
+def generate_latex_tikz(rules_df):
+    """Génère le code LaTeX pour visualiser les 3 meilleures règles"""
+    print("\n" + "="*50)
+    print("CODE LATEX (A copier-coller dans Overleaf)")
+    print("="*50)
+    
+    # On prend les 3 meilleures règles selon le Lift
+    top_3 = rules_df.head(3).copy()
+    
+    # Début du document LaTeX
+    latex_code = r"""
+\documentclass{article}
+\usepackage{tikz}
+\usetikzlibrary{shapes, arrows.meta, positioning}
+\begin{document}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=2cm and 3cm,
+    item/.style={rectangle, draw=blue!60, fill=blue!5, very thick, minimum size=7mm},
+    rule/.style={circle, draw=red!60, fill=red!5, very thick, minimum size=7mm},
+    arrow/.style={->, -{Latex[width=3mm]}, thick}
+]
+"""
+    y_pos = 0
+    for idx, row in top_3.iterrows():
+        ant = "\\newline ".join(list(row['antecedents']))
+        cons = "\\newline ".join(list(row['consequents']))
+        lift = row['lift']
+        conf = row['confidence']
+        
+        # Création des noeuds
+        block = f"""
+    % Regle {idx+1}
+    \\node[item, align=center] (ant{idx}) at (0, {y_pos}) {{{ant}}};
+    \\node[rule] (r{idx}) [right=of ant{idx}] {{R{idx+1}}};
+    \\node[item, align=center] (cons{idx}) [right=of r{idx}] {{{cons}}};
+    \\draw[arrow] (ant{idx}) -- (r{idx});
+    \\draw[arrow] (r{idx}) -- node[above, font=\\small] {{Lift: {lift:.2f}}} node[below, font=\\small] {{Conf: {conf:.0%}}} (cons{idx});
+"""
+        latex_code += block
+        y_pos -= 3.5 
+
+    latex_code += r"""
+\end{tikzpicture}
+\caption{Visualisation des 3 meilleures règles d'association}
+\end{figure}
+\end{document}
+"""
+    print(latex_code)
+    print("="*50 + "\n")
+
+
 def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_confidence=0.7):
     """Apriori + règles d'association"""
     transactions_list = df["products_list_filtered"].tolist()
@@ -188,17 +247,18 @@ def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_c
     # appliquer Apriori
     print(f"Recherche itemsets avec support >= {min_support} et max_k = {max_k}")
     frequent_itemsets = apriori(df_encoded, min_support=min_support, use_colnames=True, max_len=max_k)
-    rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_confidence)
-
+    
     if frequent_itemsets.empty:
         print(f"Aucun itemset avec un support >= {min_support}, (pt support plus bas)")
         print("-" * 50)
-        return
+        return None
+
+    rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_confidence)
 
     if rules.empty:
         print(f"Aucune règle trouvée avec une confiance >= {min_confidence}")
         print("-" * 50)
-        return
+        return None
 
     # trier par lift
     rules_sorted = rules.sort_values(by="lift", ascending=False)
@@ -209,9 +269,9 @@ def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_c
     # graphique des règles d'association
     top_rules = rules_sorted.head(15).copy()
     if not top_rules.empty:
-        # formattage
+        
         top_rules["rule"] = top_rules.apply(
-            lambda row: f"{", ".join(row["antecedents"])} → {", ".join(row["consequents"])}", 
+            lambda row: f"{', '.join(row['antecedents'])} → {', '.join(row['consequents'])}", 
             axis=1
         )
         
@@ -225,6 +285,9 @@ def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_c
         filepath_rules = os.path.join(OUTPUT_DIR, "5_regles_association.png")
         plt.savefig(filepath_rules, dpi=150, bbox_inches="tight")
         plt.close()
+        
+    ### --- On retourne les règles pour pouvoir générer le LaTeX ensuite --- ###
+    return rules_sorted
 
 if __name__ == "__main__":
     df_clean = load_and_clean_data(FILEPATH)
@@ -245,13 +308,18 @@ if __name__ == "__main__":
             df_periode = df_filtered[df_filtered["date"] >= periode_avant].copy()
             print(f"{df_periode.shape[0]} paniers pour MLxtend")
 
-            # support 1%, k=3, confiance 70%
-            analyze_association_rules(
+            
+            df_rules = analyze_association_rules(
                 df_periode,
-                min_support=0.01,
-                max_k=3,
-                min_confidence=0.7
+                min_support=0.02,   # 2% demandé
+                max_k=3,            # taille 3 max demandée
+                min_confidence=0.8  # 80% demandé
             )
+            
+            ### --- APPEL DE LA FONCTION LATEX --- ###
+            if df_rules is not None and not df_rules.empty:
+                generate_latex_tikz(df_rules)
+
         print("\nFIN")
     else:
         print("impossible de charger / nettoyer les données", file=sys.stderr)
