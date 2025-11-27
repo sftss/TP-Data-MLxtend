@@ -245,12 +245,12 @@ if __name__ == "__main__":
             df_periode = df_filtered[df_filtered["date"] >= periode_avant].copy()
             print(f"{df_periode.shape[0]} paniers pour MLxtend")
 
-            # support 1%, k=3, confiance 50% (valeurs plus souples)
+            # support 1%, k=3, confiance 70%
             analyze_association_rules(
                 df_periode,
                 min_support=0.01,
                 max_k=3,
-                min_confidence=0.5
+                min_confidence=0.7
             )
         print("\nFIN")
     else:
