@@ -1,5 +1,5 @@
 import pandas as pd, matplotlib.pyplot as plt, seaborn as sns, sys, ast, os
-import networkx as nx # AJOUT : Nécessaire pour la génération LaTeX de ton exemple
+import networkx as nx # LaTeX
 from mlxtend.preprocessing import TransactionEncoder
 from mlxtend.frequent_patterns import apriori, association_rules
 from datetime import timedelta
@@ -24,10 +24,6 @@ def clean_item_name(item_name):
 def load_and_clean_data(filepath: str):
     """Charge, nettoie et formate les données"""
     print(f"\nChargement et nettoyage de {filepath}")
-    # Sécurité si fichier absent
-    if not os.path.exists(filepath):
-        print(f"ERREUR: Fichier {filepath} introuvable.")
-        return None
         
     df = pd.read_csv(filepath)
     print(f"{df.shape[0]} lignes chargées")
@@ -42,7 +38,7 @@ def load_and_clean_data(filepath: str):
 
     # conversion de products en liste avec nettoyage
     print("Conversion de products en liste")
-    def safe_literal_eval_and_clean(item_str):
+    def clean_et_parse_item_liste(item_str):
         try:
             items = ast.literal_eval(str(item_str))
             if isinstance(items, list):
@@ -53,7 +49,7 @@ def load_and_clean_data(filepath: str):
         except:
             return []
 
-    df["products_list"] = df["products"].apply(safe_literal_eval_and_clean)
+    df["products_list"] = df["products"].apply(clean_et_parse_item_liste)
     df["basket_size"] = df["products_list"].str.len()
 
     initial_rows = df.shape[0]
@@ -63,7 +59,7 @@ def load_and_clean_data(filepath: str):
     print("-" * 50)
     return df
 
-def filter_and_get_all_items(df: pd.DataFrame):
+def filtrer_et_extraire_all_items(df: pd.DataFrame):
     """Filtre les produits des listes et retourne la Series de tous les articles"""
     print("Filtrage début")
 
@@ -71,25 +67,25 @@ def filter_and_get_all_items(df: pd.DataFrame):
     all_items_series_full = all_items_series_full[all_items_series_full.astype(str).str.strip() != ""]
 
     # mots-clés à bannir (ajouter les noms suspects)
-    junk_keywords = [
+    poubelle_keywords = [
         "postage", "manual", "bank charges", "cruk", "samples",
         "adjustment", "return", "amazon fee", "discount",
         "dotcom", "shipping", "carrier", "matrix", "faulty", "check",
         "bad debt", "write off"
     ]
-    pattern = "|".join(junk_keywords)
+    pattern = "|".join(poubelle_keywords)
 
     # trouver + exclure les produits uniques qui sont mauvais
-    junk_items_set = set(all_items_series_full[all_items_series_full.str.contains(pattern, case=False, na=False)].unique())
-    print(f"{len(junk_items_set)} produits uniques pour exclusion")
+    poubelle_items_set = set(all_items_series_full[all_items_series_full.str.contains(pattern, case=False, na=False)].unique())
+    print(f"{len(poubelle_items_set)} produits uniques pour exclusion")
 
     # Serie des produits VALIDES
-    all_items_series_valid = all_items_series_full[~all_items_series_full.isin(junk_items_set)]
-    print(f"{len(all_items_series_full) - len(all_items_series_valid)} de produits mauvais bannis de la Series")
+    items_series_valide = all_items_series_full[~all_items_series_full.isin(poubelle_items_set)]
+    print(f"{len(all_items_series_full) - len(items_series_valide)} de produits mauvais bannis de la Series")
 
     # MAJ de la DataFrame
     def filter_junk_from_list(item_list):
-        return [item for item in item_list if item not in junk_items_set]
+        return [item for item in item_list if item not in poubelle_items_set]
 
     df["products_list_filtered"] = df["products_list"].apply(filter_junk_from_list)
 
@@ -97,13 +93,13 @@ def filter_and_get_all_items(df: pd.DataFrame):
     df["basket_size_filtered"] = df["products_list_filtered"].str.len()
 
     # filtrer paniers vides
-    initial_rows = df.shape[0]
+    initiale_rows = df.shape[0]
     df = df[df["basket_size_filtered"] > 0].copy()
-    print(f"{initial_rows - df.shape[0]} paniers sont devenus vides après filtrage (supprimés)")
+    print(f"{initiale_rows - df.shape[0]} paniers sont devenus vides après filtrage (supprimés)")
     print(f"{df.shape[0]} paniers valides restants")
     print("-" * 50)
     
-    return df, all_items_series_valid
+    return df, items_series_valide
 
 def analyze_distributions(df: pd.DataFrame):
     """Crée graphiques taille paniers, jour/heure, paniers par mois"""
@@ -124,9 +120,9 @@ def analyze_distributions(df: pd.DataFrame):
     # 2. jour et heure
     df["weekday"] = df["date"].dt.day_name()
     df["hour"] = df["date"].dt.hour
-    weekdays_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    semaine_ordre = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     fig, (ax2, ax3) = plt.subplots(2, 1, figsize=(14, 12))
-    sns.countplot(data=df, x="weekday", hue="weekday", ax=ax2, order=weekdays_order, palette="Blues_d", legend=False)
+    sns.countplot(data=df, x="weekday", hue="weekday", ax=ax2, order=semaine_ordre, palette="Blues_d", legend=False)
     ax2.set_title("Paniers par jour de la semaine", fontsize=16)
     sns.countplot(data=df, x="hour", hue="hour", ax=ax3, palette="Oranges_d", legend=False)
     ax3.set_title("Paniers par heure de la journée", fontsize=16)
@@ -148,8 +144,8 @@ def analyze_distributions(df: pd.DataFrame):
     ax4.yaxis.set_major_formatter(ScalarFormatter())
     ax4.ticklabel_format(style="plain", axis="y")
 
-    mean_size = df["basket_size_filtered"].mean()
-    median_size = df["basket_size_filtered"].median()
+    # mean_size = df["basket_size_filtered"].mean()
+    # median_size = df["basket_size_filtered"].median()
     plt.tight_layout()
     filepath_taille = os.path.join(OUTPUT_DIR, "3_taille_des_paniers_filtres.png")
     plt.savefig(filepath_taille, dpi=150, bbox_inches="tight")
@@ -175,16 +171,10 @@ def analyze_popular_items(all_items_series: pd.Series):
     plt.close()
     print("-" * 50)
 
-# ============================================================
-# AJOUT : Fonction de génération LaTeX (Issue de ton exemple)
-# ============================================================
-def generate_latex_for_rules(rules_df: pd.DataFrame):
-    """
-    Génère un code LaTeX/TikZ complet pour visualiser les 3 meilleures règles.
-    Utilise NetworkX pour placer les items autour de chaque règle.
-    """
-    TOP_K_VISUALIZE = 3
-    print(f"\n[TikZ] Génération du code LaTeX pour les {TOP_K_VISUALIZE} meilleures règles...")
+def generee_latex_regles(regles_df: pd.DataFrame):
+    """Génère un code LaTeX  pour visualiser les 3 meilleures règles. Utilise NetworkX pour placer les items autour de chaque règle."""
+    TOP_K_VISUALIZE = 3 # changer si besoin selon le prof
+    print(f"\nGénération LaTeX pour les {TOP_K_VISUALIZE} meilleures règles")
     
     latex = [
         r"\documentclass[tikz,border=2pt,png]{standalone}",
@@ -212,30 +202,23 @@ def generate_latex_for_rules(rules_df: pd.DataFrame):
         ""
     ]
 
-    # Centres verticalement espacés pour bien séparer les règles
-    rule_centers = [(0, 15), (0, 0), (0, -15)]
-    radius = 6 
+    # centres verticalement espacés
+    regles_centers = [(0, 15), (0, 0), (0, -15)]
+    radius = 6
     node_id_counter = 1
-    
-    # Sélection des 3 premières règles
-    top_rules = rules_df.head(TOP_K_VISUALIZE)
 
-    if top_rules.empty:
-        print("[TikZ] Aucune règle à visualiser.")
-        return
+    top_regles = regles_df.head(TOP_K_VISUALIZE) # 3 premières règles
 
-    for i, (idx, row) in enumerate(top_rules.iterrows()):
+    for i, (idx, row) in enumerate(top_regles.iterrows()):
         if i >= 3: break
         
-        rule_name = f"R{i+1}"
-        rule_id = f"r{i+1}"
-        center_x, center_y = rule_centers[i]
-        
+        regles_nom = f"R{i+1}"
+        regles_id = f"r{i+1}"
+        center_x, center_y = regles_centers[i]
         latex.append(f"% --- Règle {i+1} (Lift: {row['lift']:.2f}) ---")
         latex.append(
-            f"\\node[rule] ({rule_id}) at ({center_x:.2f}, {center_y:.2f}) {{{rule_name}}};"
+            f"\\node[rule] ({regles_id}) at ({center_x:.2f}, {center_y:.2f}) {{{regles_nom}}};"
         )
-        
         antecedents = list(row['antecedents'])
         consequents = list(row['consequents'])
         items = antecedents + consequents
@@ -243,12 +226,11 @@ def generate_latex_for_rules(rules_df: pd.DataFrame):
         if not items:
             continue
 
-        # Utilisation de NetworkX pour placer les items en cercle
+        # NetworkX pour placer les items en cercle
         G_items = nx.Graph()
         G_items.add_nodes_from(items)
-        # On centre le layout circulaire sur la position de la règle
+        # centre le layout circulaire sur la règle
         pos_items = nx.circular_layout(G_items, scale=radius, center=(center_x, center_y))
-        
         item_node_ids = {} 
 
         for item in items:
@@ -256,25 +238,25 @@ def generate_latex_for_rules(rules_df: pd.DataFrame):
             node_id_counter += 1
             item_node_ids[item] = item_tikz_id
             (x, y) = pos_items[item]
-            # Echappement des caractères pour LaTeX
+            # échappement des caractères pour LaTeX
             label = str(item).replace("-", "-\\\\").replace("_", "\\_").replace(" ", "\\\\")
             latex.append(
                 f"\\node[item] ({item_tikz_id}) at ({x:.2f}, {y:.2f}) {{{label}}};"
             )
 
-        # Flèches antécédents -> Règle (Vertes)
+        # flèches antécédents -> règle en vert
         for ant in antecedents:
             ant_id = item_node_ids[ant]
             latex.append(
-                f"\\draw[green!60!black, thick, ->] ({ant_id}) -- ({rule_id});"
+                f"\\draw[green!60!black, thick, ->] ({ant_id}) -- ({regles_id});"
             )
 
-        # Flèches Règle -> Conséquents (Rouges)
+        # flèches règle -> conséquents en rouge
         for cons in consequents:
             cons_id = item_node_ids[cons]
             lift_label = f"{row['lift']:.2f}"
             latex.append(
-                f"\\draw[red!80!black, thick, ->] ({rule_id}) -- "
+                f"\\draw[red!80!black, thick, ->] ({regles_id}) -- "
                 f"node[pos=0.6, above, sloped, font=\\tiny, fill=white, inner sep=1pt] {{{lift_label}}} "
                 f"({cons_id});"
             )
@@ -283,63 +265,63 @@ def generate_latex_for_rules(rules_df: pd.DataFrame):
     latex.append(r"\end{tikzpicture}")
     latex.append(r"\end{document}")
     
-    print("\n" + "="*80)
+    print("-" * 50)
     print("CODE LATEX (TIKZ) A COPIER DANS OVERLEAF :")
-    print("="*80)
+    print("-" * 50)
     print("\n".join(latex))
-    print("="*80 + "\n")
+    print("-" * 50)
 
 
-def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_confidence=0.7):
+def analtyse_regles_association(df: pd.DataFrame, min_support=0.02, max_k=5, min_confidence=0.7):
     """Apriori + règles d'association"""
-    transactions_list = df["products_list_filtered"].tolist()
-    print(f"{len(transactions_list)} paniers pour Apriori")
+    transactions_liste = df["products_list_filtered"].tolist()
+    print(f"{len(transactions_liste)} paniers pour Apriori")
 
     # encoder transactions en matrice SPARSE
     te = TransactionEncoder()
     try:
         # matrice sparse
-        te_ary = te.fit(transactions_list).transform(transactions_list, sparse=True)
-        df_encoded = pd.DataFrame(te_ary.toarray(), columns=te.columns_).astype(bool)
+        te_ary = te.fit(transactions_liste).transform(transactions_liste, sparse=True)
+        df_encodee = pd.DataFrame(te_ary.toarray(), columns=te.columns_).astype(bool)
     except (TypeError, AttributeError):
         # fallback (pb de version)
-        te_ary = te.fit(transactions_list).transform(transactions_list)
-        df_encoded = pd.DataFrame(te_ary, columns=te.columns_)
+        te_ary = te.fit(transactions_liste).transform(transactions_liste)
+        df_encodee = pd.DataFrame(te_ary, columns=te.columns_)
 
     # appliquer Apriori
     print(f"Recherche itemsets avec support >= {min_support} et max_k = {max_k}")
-    frequent_itemsets = apriori(df_encoded, min_support=min_support, use_colnames=True, max_len=max_k)
+    frequent_itemsets = apriori(df_encodee, min_support=min_support, use_colnames=True, max_len=max_k)
     
     if frequent_itemsets.empty:
         print(f"Aucun itemset avec un support >= {min_support}, (pt support plus bas)")
         print("-" * 50)
         return None
 
-    rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_confidence)
+    regles = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_confidence)
 
-    if rules.empty:
+    if regles.empty:
         print(f"Aucune règle trouvée avec une confiance >= {min_confidence}")
         print("-" * 50)
         return None
 
     # trier par lift
-    rules_sorted = rules.sort_values(by="lift", ascending=False)
-    cols_to_show = ["antecedents", "consequents", "support", "confidence", "lift"]
-    print(rules_sorted[cols_to_show].head(20).to_string(index=False))
+    regles_triees = regles.sort_values(by="lift", ascending=False)
+    cols_affichees = ["antecedents", "consequents", "support", "confidence", "lift"]
+    # print(regles_triees[cols_affichees].head(20).to_string(index=False)) #DEBUG
     print("-" * 50)
 
     # graphique des règles d'association
-    top_rules = rules_sorted.head(15).copy()
-    if not top_rules.empty:
-        # formattage CORRIGÉ (guillemets simples à l'intérieur)
-        top_rules["rule"] = top_rules.apply(
+    top_regles = regles_triees.head(15).copy()
+    if not top_regles.empty:
+        # formattage (guillemets simples à l'intérieur)
+        top_regles["rule"] = top_regles.apply(
             lambda row: f"{', '.join(row['antecedents'])} → {', '.join(row['consequents'])}",
             axis=1
         )
         
         plt.figure(figsize=(14, 10))
-        ax = sns.barplot(data=top_rules,  x="lift",  y="rule",  hue="confidence", palette="RdYlGn", orient="h", legend=True)
-        ax.set_title("Top 15 des règles d'association (par Lift)", fontsize=16)
+        ax = sns.barplot(data=top_regles,  x="lift",  y="rule",  hue="confidence", palette="RdYlGn", orient="h", legend=True)
+        ax.set_title("Top 5 des règles d'association (par Lift)", fontsize=16)
         ax.set_xlabel("Lift")
         ax.set_ylabel("Règle")
         plt.legend(title="Confiance", loc="lower right")
@@ -347,31 +329,31 @@ def analyze_association_rules(df: pd.DataFrame, min_support=0.02, max_k=5, min_c
         filepath_rules = os.path.join(OUTPUT_DIR, "5_regles_association.png")
         plt.savefig(filepath_rules, dpi=150, bbox_inches="tight")
         plt.close()
-    
-    # IMPORTANT : Retourne le dataframe pour l'utiliser ensuite
-    return rules_sorted
+
+    # IMPORTANT, retourne le dataframe pour l'utiliser ensuite
+    return regles_triees
 
 if __name__ == "__main__":
     df_clean = load_and_clean_data(FILEPATH)
     if df_clean is not None:
-        df_filtered, all_items_valid = filter_and_get_all_items(df_clean)
+        df_filtree, all_items_valide = filtrer_et_extraire_all_items(df_clean)
 
         # tt les données pour les graphiques
-        analyze_distributions(df_filtered)
-        analyze_popular_items(all_items_valid)
+        analyze_distributions(df_filtree)
+        analyze_popular_items(all_items_valide)
 
         # Filtrage pour les règles d'association
         print("\nFiltrage pour règles d'association")
-        if not df_filtered.empty:
-            max_date = df_filtered["date"].max()
+        if not df_filtree.empty:
+            max_date = df_filtree["date"].max()
             periode_avant = max_date - timedelta(days=30) # changer la période ici
             print(f"Période : {periode_avant} à {max_date}")
 
-            df_periode = df_filtered[df_filtered["date"] >= periode_avant].copy()
+            df_periode = df_filtree[df_filtree["date"] >= periode_avant].copy()
             print(f"{df_periode.shape[0]} paniers pour MLxtend")
 
-            # support 0.02, k=3, confiance 0.8 (CORRIGÉ)
-            df_rules = analyze_association_rules(
+            # support 2%, k=3, confiance 0.8
+            df_regles = analtyse_regles_association(
                 df_periode,
                 min_support=0.02,
                 max_k=3,
@@ -379,8 +361,8 @@ if __name__ == "__main__":
             )
             
             # APPEL DU LATEX SI RÈGLES TROUVÉES
-            if df_rules is not None and not df_rules.empty:
-                generate_latex_for_rules(df_rules)
+            if df_regles is not None and not df_regles.empty:
+                generee_latex_regles(df_regles)
 
         print("\nFIN")
     else:
