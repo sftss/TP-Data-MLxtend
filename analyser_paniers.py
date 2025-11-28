@@ -318,7 +318,8 @@ def analtyse_regles_association(df: pd.DataFrame, min_support=0.02, max_k=5, min
             lambda row: f"{', '.join(row['antecedents'])} → {', '.join(row['consequents'])}",
             axis=1
         )
-        
+        # arrondir la confiance pour la légende
+        top_regles["confidence"] = top_regles["confidence"].round(2)
         plt.figure(figsize=(14, 10))
         ax = sns.barplot(data=top_regles,  x="lift",  y="rule",  hue="confidence", palette="RdYlGn", orient="h", legend=True)
         ax.set_title("Top 5 des règles d'association (par Lift)", fontsize=16)
