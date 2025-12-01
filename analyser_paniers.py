@@ -4,6 +4,8 @@ from mlxtend.preprocessing import TransactionEncoder
 from mlxtend.frequent_patterns import apriori, association_rules
 from datetime import timedelta
 from matplotlib.ticker import ScalarFormatter
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
 
 # changer les valeurs si besoin
 FILEPATH = "dataset_baskets_dated.csv"
@@ -171,6 +173,146 @@ def analyze_popular_items(all_items_series: pd.Series):
     plt.close()
     print("-" * 50)
 
+# ============================================================
+# ANALYSE CLIENTS
+# ============================================================
+
+def analyse_rfm_clients(df: pd.DataFrame):
+    """Analyse RFM (Récence, Fréquence, Valeur) des clients (avec la taille moyenne des paniers comme valeur)"""
+    print("\nAnalyse RFM")
+    
+    date_reference = df["date"].max() + timedelta(days=1)
+    
+    rfm = df.groupby("customer_id").agg(
+        recence=("date", lambda x: (date_reference - x.max()).days),
+        frequence=("basket_id", "nunique"),
+        valeur_moy=("basket_size_filtered", "mean"),
+        nb_articles_total=("basket_size_filtered", "sum")
+    ).reset_index()
+    
+    # score RFM
+    rfm["R_score"] = pd.qcut(rfm["recence"], q=5, labels=[5, 4, 3, 2, 1], duplicates="drop")
+    rfm["F_score"] = pd.qcut(rfm["frequence"].rank(method="first"), q=5, labels=[1, 2, 3, 4, 5], duplicates="drop")
+    rfm["M_score"] = pd.qcut(rfm["valeur_moy"].rank(method="first"), q=5, labels=[1, 2, 3, 4, 5], duplicates="drop")
+    
+    rfm["RFM_score"] = rfm["R_score"].astype(int) + rfm["F_score"].astype(int) + rfm["M_score"].astype(int)
+    
+    # segmentation
+    def segmenter_client(row):
+        r, f, m = int(row["R_score"]), int(row["F_score"]), int(row["M_score"])
+        if r >= 4 and f >= 4:
+            return "Champions"
+        elif r >= 3 and f >= 3:
+            return "Clients fidèles"
+        elif r >= 4 and f <= 2:
+            return "Nouveaux clients"
+        elif r <= 2 and f >= 3:
+            return "À risque"
+        elif r <= 2 and f <= 2:
+            return "Perdus"
+        else:
+            return "Occasionnels"
+    
+    rfm["segment"] = rfm.apply(segmenter_client, axis=1)
+    
+    # graphique segments
+    plt.figure(figsize=(12, 6))
+    segment_counts = rfm["segment"].value_counts()
+    colors = {"Champions": "#2ecc71", "Clients fidèles": "#3498db", 
+              "Nouveaux clients": "#9b59b6", "À risque": "#e74c3c",
+              "Perdus": "#95a5a6", "Occasionnels": "#f39c12"}
+    ax = sns.barplot(x=segment_counts.index, y=segment_counts.values, 
+                     hue=segment_counts.index, palette=colors, legend=False)
+    ax.set_title("Segmentation RFM des clients", fontsize=16)
+    ax.set_xlabel("Segment")
+    ax.set_ylabel("Nombre de clients")
+    for i, v in enumerate(segment_counts.values):
+        ax.text(i, v + 10, str(v), ha="center", fontweight="bold")
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, "6_segmentation_rfm.png"), dpi=150, bbox_inches="tight")
+    plt.close()
+    
+    print(f"Segments clients :\n{segment_counts.to_string()}")
+    print("-" * 50)
+    return rfm
+
+
+def analyse_fidelite_clients(df: pd.DataFrame):
+    """Analyse de la fidélité, distribution des visites, clients uniques vs récurrents"""
+    print("\nAnalyse de la fidélité clients")
+    
+    visites_par_client = df.groupby("customer_id")["basket_id"].nunique()
+    
+    # stats
+    clients_uniques = (visites_par_client == 1).sum()
+    clients_recurrents = (visites_par_client > 1).sum()
+    clients_fideles = (visites_par_client >= 5).sum()
+    
+    print(f"Clients uniques (1 visite) : {clients_uniques} ({clients_uniques/len(visites_par_client)*100:.1f}%)")
+    print(f"Clients récurrents (2+ visites) : {clients_recurrents} ({clients_recurrents/len(visites_par_client)*100:.1f}%)")
+    print(f"Clients fidèles (5+ visites) : {clients_fideles} ({clients_fideles/len(visites_par_client)*100:.1f}%)")
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    
+    # distribution des visites
+    max_visites = int(visites_par_client.quantile(0.95))
+    sns.histplot(visites_par_client[visites_par_client <= max_visites], bins=range(1, max_visites + 2), 
+                 ax=axes[0], color="steelblue", kde=False)
+    axes[0].set_title("Distribution du nombre de visites par client", fontsize=14)
+    axes[0].set_xlabel("Nombre de visites")
+    axes[0].set_ylabel("Nombre de clients")
+    axes[0].set_yscale("log")
+    
+    # valeurs entières sur l'axe Y
+    axes[0].yaxis.set_major_formatter(ScalarFormatter())
+    axes[0].ticklabel_format(style="plain", axis="y")
+    
+    # camembert fidélité
+    labels = ["1 visite", "2-4 visites", "5+ visites"]
+    sizes = [
+        (visites_par_client == 1).sum(),
+        ((visites_par_client >= 2) & (visites_par_client < 5)).sum(),
+        (visites_par_client >= 5).sum()
+    ]
+    colors_pie = ["#e74c3c", "#f39c12", "#2ecc71"]
+    axes[1].pie(sizes, labels=labels, autopct="%1.1f%%", colors=colors_pie, startangle=90)
+    axes[1].set_title("Répartition des clients par fidélité", fontsize=14)
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, "7_fidelite_clients.png"), dpi=150, bbox_inches="tight")
+    plt.close()
+    print("-" * 50)
+
+
+def analyse_evolution_clients(df: pd.DataFrame):
+    """Analyse l'évolution des nouveaux clients vs récurrents par mois"""
+    print("\nAnalyse évolution nouveaux/récurrents par mois")
+    
+    df_sorted = df.sort_values("date")
+    premiere_visite = df_sorted.groupby("customer_id")["date"].min().reset_index()
+    premiere_visite.columns = ["customer_id", "premiere_visite"]
+    premiere_visite["mois_premiere_visite"] = premiere_visite["premiere_visite"].dt.to_period("M")
+    
+    df_merged = df.merge(premiere_visite[["customer_id", "mois_premiere_visite"]], on="customer_id")
+    df_merged["mois_achat"] = df_merged["date"].dt.to_period("M")
+    df_merged["est_nouveau"] = df_merged["mois_achat"] == df_merged["mois_premiere_visite"]
+    
+    evolution = df_merged.groupby(["mois_achat", "est_nouveau"])["customer_id"].nunique().unstack(fill_value=0)
+    evolution.columns = ["Récurrents", "Nouveaux"]
+    evolution.index = evolution.index.astype(str)
+    
+    plt.figure(figsize=(14, 7))
+    evolution.plot(kind="bar", stacked=True, color=["#3498db", "#2ecc71"], ax=plt.gca())
+    plt.title("Évolution des clients nouveaux vs récurrents par mois", fontsize=16)
+    plt.xlabel("Mois")
+    plt.ylabel("Nombre de clients uniques")
+    plt.xticks(rotation=45, ha="right")
+    plt.legend(title="Type de client")
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, "8_evolution_clients.png"), dpi=150, bbox_inches="tight")
+    plt.close()
+    print("-" * 50)
+
 def generee_latex_regles(regles_df: pd.DataFrame):
     """Génère un code LaTeX  pour visualiser les 3 meilleures règles. Utilise NetworkX pour placer les items autour de chaque règle."""
     TOP_K_VISUALIZE = 3 # changer si besoin selon le prof
@@ -331,7 +473,7 @@ def analtyse_regles_association(df: pd.DataFrame, min_support=0.02, max_k=5, min
         plt.savefig(filepath_rules, dpi=150, bbox_inches="tight")
         plt.close()
 
-    # IMPORTANT, retourne le dataframe pour l'utiliser ensuite
+    # IMPORTANT retourne le dataframe pour l'utiliser ensuite
     return regles_triees
 
 if __name__ == "__main__":
@@ -343,6 +485,12 @@ if __name__ == "__main__":
         analyze_distributions(df_filtree)
         analyze_popular_items(all_items_valide)
 
+        print("ANALYSE CLIENTS") 
+        rfm_df = analyse_rfm_clients(df_filtree)
+        analyse_fidelite_clients(df_filtree)
+        analyse_evolution_clients(df_filtree)
+
+        print("ANALYSE RÈGLES D'ASSOCIATION")
         # Filtrage pour les règles d'association
         print("\nFiltrage pour règles d'association")
         if not df_filtree.empty:
