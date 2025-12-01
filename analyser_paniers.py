@@ -218,11 +218,11 @@ def analyse_rfm_clients(df: pd.DataFrame):
     # graphique segments
     plt.figure(figsize=(12, 6))
     segment_counts = rfm["segment"].value_counts()
-    colors = {"Champions": "#2ecc71", "Clients fidèles": "#3498db", 
+    couleurs = {"Champions": "#2ecc71", "Clients fidèles": "#3498db", 
               "Nouveaux clients": "#9b59b6", "À risque": "#e74c3c",
               "Perdus": "#95a5a6", "Occasionnels": "#f39c12"}
     ax = sns.barplot(x=segment_counts.index, y=segment_counts.values, 
-                     hue=segment_counts.index, palette=colors, legend=False)
+                     hue=segment_counts.index, palette=couleurs, legend=False)
     ax.set_title("Segmentation RFM des clients", fontsize=16)
     ax.set_xlabel("Segment")
     ax.set_ylabel("Nombre de clients")
@@ -269,13 +269,13 @@ def analyse_fidelite_clients(df: pd.DataFrame):
     
     # camembert fidélité
     labels = ["1 visite", "2-4 visites", "5+ visites"]
-    sizes = [
+    tailles = [
         (visites_par_client == 1).sum(),
         ((visites_par_client >= 2) & (visites_par_client < 5)).sum(),
         (visites_par_client >= 5).sum()
     ]
-    colors_pie = ["#e74c3c", "#f39c12", "#2ecc71"]
-    axes[1].pie(sizes, labels=labels, autopct="%1.1f%%", colors=colors_pie, startangle=90)
+    couleur_partie = ["#e74c3c", "#f39c12", "#2ecc71"]
+    axes[1].pie(tailles, labels=labels, autopct="%1.1f%%", colors=couleur_partie, startangle=90)
     axes[1].set_title("Répartition des clients par fidélité", fontsize=14)
     
     plt.tight_layout()
