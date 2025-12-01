@@ -4,3 +4,4 @@ seaborn
 sys
 ast
 mlxtend
+networkx
