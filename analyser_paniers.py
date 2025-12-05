@@ -4,8 +4,6 @@ from mlxtend.preprocessing import TransactionEncoder
 from mlxtend.frequent_patterns import apriori, association_rules
 from datetime import timedelta
 from matplotlib.ticker import ScalarFormatter
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
 
 # changer les valeurs si besoin
 FILEPATH = "dataset_baskets_dated.csv"
