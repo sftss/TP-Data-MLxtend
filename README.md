@@ -6,19 +6,6 @@ L'analyse complète est contenue dans le script `analyser_paniers.py`.
 
 ---
 
-## Structure du projet
-
-```
-TP-Data-MLxtend/
-├── analyser_paniers.py          # Script principal d'analyse
-├── dataset_baskets_dated.csv    # Jeu de données des transactions
-├── graphiques/                  # Dossier des visualisations générées
-├── requirements.txt             # Dépendances Python
-└── README.md                    # Ce fichier
-```
-
----
-
 ## Fonctionnalités
 
 Le script `analyser_paniers.py` exécute les tâches suivantes :
@@ -102,10 +89,4 @@ Les graphiques seront automatiquement générés dans le dossier `graphiques/`.
 
 ## Résultats
 
-Le script affiche dans le terminal :
-
-- Les statistiques globales du dataset
-- L'analyse de l'impact du pruning selon différents seuils
-- Le classement des clients les plus actifs
-- Le top 20 des articles les plus vendus
-- Les 20 meilleures règles d'association triées par lift
+Vous pouvez retrouver les résultats de l'analyse dans le dossier "graphiques" à la racine du projet 
